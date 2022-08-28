@@ -5,7 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Windows;
-
+using System.Runtime.InteropServices;
 
 
 namespace NDISource
@@ -15,43 +15,22 @@ namespace NDISource
     /// </summary>
     public partial class MainWindow : Window
     {
-        public const string API_KEY = "";
-        public const string SESSION_ID = "";
-        public const string TOKEN = "";
-        NDIAudioDevice ndi_audio;
+        public const string API_KEY = "47464991";
+        public const string SESSION_ID = "1_MX40NzQ2NDk5MX5-MTY2MTcwMDA3MDI5N35DT1hTMmFySEVWSnJGckJRelhQaCszMVR-fg";
+        public const string TOKEN = "T1==cGFydG5lcl9pZD00NzQ2NDk5MSZzaWc9NDBiMzdhMTVlNDMwOTNiNmVmNTRlODFiNzU5OGJmMDFkOGFlOTExYjpzZXNzaW9uX2lkPTFfTVg0ME56UTJORGs1TVg1LU1UWTJNVGN3TURBM01ESTVOMzVEVDFoVE1tRnlTRVZXU25KR2NrSlJlbGhRYUNzek1WUi1mZyZjcmVhdGVfdGltZT0xNjYxNzAwMDc4Jm5vbmNlPTAuMjI2MjkzMjAzMDk4OTc5NSZyb2xlPXB1Ymxpc2hlciZleHBpcmVfdGltZT0xNjYxNzg2NDc4JmluaXRpYWxfbGF5b3V0X2NsYXNzX2xpc3Q9";
+        private const int NUM_CHANNELS = 1;
         VideoCapturer Capturer;
         Session Session;
         Publisher Publisher;
         Subscriber subscriber;
         bool Disconnect = false;
         Dictionary<Stream, Subscriber> SubscriberByStream = new Dictionary<Stream, Subscriber>();
-        private IntPtr sendInstancePtr;
+        //stores our ndi references
+        Dictionary<Stream, IntPtr> NdiInstancePtrByStream = new Dictionary<Stream, IntPtr>();
         private NDIRenderer renderer;
         public MainWindow()
         {
-            InitializeComponent();
-            
-            // .Net interop doesn't handle UTF-8 strings, so do it manually
-            // These must be freed later
-            IntPtr sourceNamePtr = UTF.StringToUtf8("NDIlib Send Example");
-           
-            IntPtr groupsNamePtr = IntPtr.Zero;
-            // Create an NDI source description using sourceNamePtr and it's clocked to the video.
-            NDIlib.send_create_t createDesc = new NDIlib.send_create_t()
-            {
-                p_ndi_name = sourceNamePtr,
-                p_groups = groupsNamePtr,
-                clock_video = true,
-                clock_audio = true
-            };
 
-            // We create the NDI finder instance
-            sendInstancePtr = NDIlib.send_create(ref createDesc);
-
-
-            ndi_audio = new NDIAudioDevice(sendInstancePtr);
-            AudioDevice.SetCustomAudioDevice(Context.Instance, ndi_audio);
-            
             // This shows how to enumarate the available capturer devices on the system to allow the user of the app
             // to select the desired camera. If a capturer is not provided in the publisher constructor the first available 
             // camera will be used.
@@ -143,7 +122,25 @@ namespace NDISource
         {
             Trace.WriteLine("Session stream received");
 
-            renderer = new NDIRenderer(sendInstancePtr);
+            // .Net interop doesn't handle UTF-8 strings, so do it manually
+            // These must be freed later
+            IntPtr sourceNamePtr = UTF.StringToUtf8("NDIlib Send Example: "+e.Stream.Id);
+
+            IntPtr groupsNamePtr = IntPtr.Zero;
+            // Create an NDI source description using sourceNamePtr and it's clocked to the video.
+            NDIlib.send_create_t createDesc = new NDIlib.send_create_t()
+            {
+                p_ndi_name = sourceNamePtr,
+                p_groups = groupsNamePtr,
+                clock_video = true,
+                clock_audio = true
+            };
+
+            // We create the NDI finder instance
+            IntPtr ndiPointer = NDIlib.send_create(ref createDesc);
+            NdiInstancePtrByStream.Add(e.Stream, ndiPointer);
+
+            renderer = new NDIRenderer(ndiPointer);
     
             SubscriberGrid.Children.Add(renderer);
             UpdateGridSize(SubscriberGrid.Children.Count);
@@ -153,6 +150,9 @@ namespace NDISource
             }.Build();
             SubscriberByStream.Add(e.Stream, subscriber);
             subscriber.SubscribeToAudio = true;
+
+            //we will use the nes AudioData Event handler (added on Windows Opentok Client 2.23.1)
+            subscriber.AudioData += onAudioData;
            
             try
             {
@@ -164,6 +164,33 @@ namespace NDISource
             }
         }
 
+        private void onAudioData(object sender, Subscriber.AudioDataEventArgs e)
+        {
+            //sender is a subscriber, so let's cast to that so we can use it easier (intellisense ^_^)
+            Subscriber subscriber = (Subscriber)sender;
+
+            //let's get the NDI instance via the stream
+            IntPtr ndiSenderInstance = NdiInstancePtrByStream[subscriber.Stream];
+            Trace.WriteLine("Sender " + subscriber.Id);
+            // This is how many samples we will read. There is a bunch of calculations here to sync correctly, but let's just do SAMPLE_RATE/30
+            NDIlib.audio_frame_interleaved_16s_t audio_frame_16 = new NDIlib.audio_frame_interleaved_16s_t()
+            {
+                // 48kHz in our example
+                sample_rate = e.SampleRate,
+                // Lets submit stereo although there is nothing limiting us
+                no_channels = NUM_CHANNELS,
+                no_samples = e.NumberOfSamples,
+                // Timecode (synthesized for us !)
+                timecode = NDIlib.send_timecode_synthesize,
+            };
+
+            IntPtr pointer = Marshal.AllocHGlobal(e.NumberOfSamples * 2 * NUM_CHANNELS);
+            Marshal.Copy(e.SampleBuffer, 0, pointer, e.NumberOfSamples * 2 * NUM_CHANNELS);
+            audio_frame_16.p_data = pointer;
+            NDIlib.util_send_send_audio_interleaved_16s(ndiSenderInstance, ref audio_frame_16);
+            Marshal.FreeHGlobal(pointer);
+        }
+
         private void Session_StreamDropped(object sender, Session.StreamEventArgs e)
         {
             Trace.WriteLine("Session stream dropped");
@@ -171,6 +198,9 @@ namespace NDISource
             if (subscriber != null)
             {
                 SubscriberByStream.Remove(e.Stream);
+
+                //Let's remove the NDI Instance as well 
+                NdiInstancePtrByStream.Remove(e.Stream);
                 try
                 {
                     Session.Unsubscribe(subscriber);

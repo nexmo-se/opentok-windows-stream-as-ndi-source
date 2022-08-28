@@ -79,7 +79,6 @@ namespace NDISource
 
                 try
                 {
-                   
 
                     FrameWidth = frame.Width;
                     FrameHeight = frame.Height;

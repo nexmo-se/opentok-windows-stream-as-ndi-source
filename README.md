@@ -1,13 +1,15 @@
 # Vonage Render to NDI
-This prohject shows how to use Custom Audio drivers and Video renderer to creata an NDI source from
-Opentok Streams
+This project shows how to uses Subscriber.AudioData event and Video renderer to creata an NDI source from
+Opentok Streams. This sample will create different streams for different Subscribers (multi NDI Streams)
+
+Stream names will be "NDIlib Send Example: <STREAMID>"
 
 ## Prerequisites
 
 - NDI SDK for Windows (NDI 5) - https://www.ndi.tv/sdk/
 - NDI Tools. I used the **NDI Studio Monitor** to view NDI Streams - https://ndi.tv/tools/
 - Vonage Video Account
-- Vonage Video SDK for Windows (OpenTok.Client v2.23.1)
+- Vonage Video SDK for Windows, OpenTok.Client v2.23.1 (Important, required for AudioData Event)
 
 ### NDI Setup
 
@@ -29,11 +31,6 @@ NDIRenderer.cs
 ----------------------
 
 The NDI Render class implements IVideoRenderer to get Video streams and send send it to NDI.
-
-NDIAudioDevice.cs
-----------------------
-This renderer sends the audio stream from the audiobus (passed as an audio bus parameter) to NDI
-
 
 MainWindow.xaml.cs
 ------------------
