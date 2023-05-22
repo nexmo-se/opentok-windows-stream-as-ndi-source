@@ -6,7 +6,7 @@ Stream names will be "NDIlib Send Example: <STREAMID>"
 
 ## Prerequisites
 
-- NDI SDK for Windows (NDI 5) - https://www.ndi.tv/sdk/
+- NDI SDK for Windows (NDI 5.5) - https://www.ndi.tv/sdk/
 - NDI Tools. I used the **NDI Studio Monitor** to view NDI Streams - https://ndi.tv/tools/
 - Vonage Video Account
 - Vonage Video SDK for Windows, OpenTok.Client v2.23.1 (Important, required for AudioData Event)

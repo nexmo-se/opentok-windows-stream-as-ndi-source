@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Windows;
 using System.Runtime.InteropServices;
-
+using System.Threading.Tasks;
 
 namespace NDISource
 {
@@ -15,9 +15,9 @@ namespace NDISource
     /// </summary>
     public partial class MainWindow : Window
     {
-        public const string API_KEY = "47464991";
-        public const string SESSION_ID = "1_MX40NzQ2NDk5MX5-MTY2MTcwMDA3MDI5N35DT1hTMmFySEVWSnJGckJRelhQaCszMVR-fg";
-        public const string TOKEN = "T1==cGFydG5lcl9pZD00NzQ2NDk5MSZzaWc9NDBiMzdhMTVlNDMwOTNiNmVmNTRlODFiNzU5OGJmMDFkOGFlOTExYjpzZXNzaW9uX2lkPTFfTVg0ME56UTJORGs1TVg1LU1UWTJNVGN3TURBM01ESTVOMzVEVDFoVE1tRnlTRVZXU25KR2NrSlJlbGhRYUNzek1WUi1mZyZjcmVhdGVfdGltZT0xNjYxNzAwMDc4Jm5vbmNlPTAuMjI2MjkzMjAzMDk4OTc5NSZyb2xlPXB1Ymxpc2hlciZleHBpcmVfdGltZT0xNjYxNzg2NDc4JmluaXRpYWxfbGF5b3V0X2NsYXNzX2xpc3Q9";
+        public const string API_KEY = "";
+        public const string SESSION_ID = "";
+        public const string TOKEN = "";
         private const int NUM_CHANNELS = 1;
         VideoCapturer Capturer;
         Session Session;
@@ -164,31 +164,34 @@ namespace NDISource
             }
         }
 
-        private void onAudioData(object sender, Subscriber.AudioDataEventArgs e)
+        private async void onAudioData(object sender, Subscriber.AudioDataEventArgs e)
         {
             //sender is a subscriber, so let's cast to that so we can use it easier (intellisense ^_^)
             Subscriber subscriber = (Subscriber)sender;
-
-            //let's get the NDI instance via the stream
-            IntPtr ndiSenderInstance = NdiInstancePtrByStream[subscriber.Stream];
-            Trace.WriteLine("Sender " + subscriber.Id);
-            // This is how many samples we will read. There is a bunch of calculations here to sync correctly, but let's just do SAMPLE_RATE/30
-            NDIlib.audio_frame_interleaved_16s_t audio_frame_16 = new NDIlib.audio_frame_interleaved_16s_t()
+            
+            //we have to run the NDI send audio away from UI thread so it does not block the video render
+            await Task.Run(() =>
             {
-                // 48kHz in our example
-                sample_rate = e.SampleRate,
-                // Lets submit stereo although there is nothing limiting us
-                no_channels = NUM_CHANNELS,
-                no_samples = e.NumberOfSamples,
-                // Timecode (synthesized for us !)
-                timecode = NDIlib.send_timecode_synthesize,
-            };
+                //let's get the NDI instance via the stream
+                IntPtr ndiSenderInstance = NdiInstancePtrByStream[subscriber.Stream];
+                Trace.WriteLine("Sender " + subscriber.Id);
+                // This is how many samples we will read. There is a bunch of calculations here to sync correctly, but let's just do SAMPLE_RATE/30
+                NDIlib.audio_frame_interleaved_16s_t audio_frame_16 = new NDIlib.audio_frame_interleaved_16s_t()
+                {
+                    // 48kHz in our example
+                    sample_rate = e.SampleRate,
+                    // Lets submit stereo although there is nothing limiting us
+                    no_channels = NUM_CHANNELS,
+                    no_samples = e.NumberOfSamples,
+                    // Timecode (synthesized for us !)
+                    timecode = NDIlib.send_timecode_synthesize,
+                };                
+                audio_frame_16.p_data = Marshal.AllocHGlobal(e.NumberOfSamples * 2 * NUM_CHANNELS);
+                Marshal.Copy(e.SampleBuffer, 0, audio_frame_16.p_data, e.NumberOfSamples * 2 * NUM_CHANNELS);
+                NDIlib.util_send_send_audio_interleaved_16s(ndiSenderInstance, ref audio_frame_16);
+                Marshal.FreeHGlobal(audio_frame_16.p_data);
+            });
 
-            IntPtr pointer = Marshal.AllocHGlobal(e.NumberOfSamples * 2 * NUM_CHANNELS);
-            Marshal.Copy(e.SampleBuffer, 0, pointer, e.NumberOfSamples * 2 * NUM_CHANNELS);
-            audio_frame_16.p_data = pointer;
-            NDIlib.util_send_send_audio_interleaved_16s(ndiSenderInstance, ref audio_frame_16);
-            Marshal.FreeHGlobal(pointer);
         }
 
         private void Session_StreamDropped(object sender, Session.StreamEventArgs e)

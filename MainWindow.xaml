@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:NDISource" x:Class="NDISource.MainWindow"
         mc:Ignorable="d"
-        Title="Screen Sharing Example" Height="350" Width="525" MinWidth="320" MinHeight="240">
+        Title="Subscriber as NDI Source Example" Height="350" Width="525" MinWidth="320" MinHeight="240">
   <Grid>
     <UniformGrid x:Name="SubscriberGrid" Rows="1" Columns="0">
     </UniformGrid>
